@@ -20,14 +20,19 @@
  * SDA----------14
  * SCL----------15
  * 
- * 
+ * MLX90614    ESP32CAM
+ * Vin----------------5V
+ * GND----------------GND
+ * SDA----------------14
+ * SCL----------------15
  */
 
 //Bibliotecas
 #include <WiFi.h>  // Biblioteca para el control de WiFi
 #include <PubSubClient.h> //Biblioteca para conexion MQTT
 #include <Wire.h> // Biblioteca para comunicación I2C
-#include "MAX30105.h" // Biblioteca del sensor 
+#include "MAX30105.h" // Biblioteca del sensor MAX30100
+#include <Adafruit_MLX90614.h> //Biblioteca del MLX90614
 #include "spo2_algorithm.h" // Biblioteca para interpretación de señales
 
 //Datos de WiFi
@@ -42,16 +47,17 @@ IPAddress server(192,168,100,131);
 WiFiClient espClient; // Este objeto maneja los datos de conexion WiFi
 PubSubClient client(espClient); // Este objeto maneja los datos de conexion al broker
 MAX30105 particleSensor; // Objeto para manejar el sensor MAX301000
+Adafruit_MLX90614 mlx = Adafruit_MLX90614(); //Objeto para manejar el sensor MLX90614
 
-#define MAX_BRIGHTNESS 255 // Constante de brillo para el MAX30105
 
 // Variables
 int ledPin = 33;  // Para indicar el estatus de conexión
 int ledPin2 = 4; // Para mostrar mensajes recibidos
-long timeNow, timeLastMQTT, timeLastMax30100; // Variables de control de tiempo no bloqueante
-int wait = 5000;  // Indica la espera cada 5 segundos para envío de mensajes MQTT
+float tir; // Variable de almacenamiento del sensor MLX90614
+long timeNow, timeLastMQTT, timeLastMax30100, timeLastMLX90614; // Variables de control de tiempo no bloqueante
+int waitMQTT = 5000;  // Indica la espera cada 5 segundos para envío de mensajes MQTT
 int waitMax30100 = 4000; // Espera para lectua del sensor MAX30100
-
+int waitMLX90614 = 500; // Espera para la lectura del sensor MLX90614
 
 #define MAX_BRIGHTNESS 255 // Constante de brillo para el MAX30105
 
@@ -124,7 +130,7 @@ void setup() {
 
   // Initialize sensor
   Wire.begin (14,15);
-  if (!particleSensor.begin(Wire, I2C_SPEED_FAST)) //Use default I2C port, 400kHz speed
+  if (!particleSensor.begin(Wire)) //Use default I2C port, 400kHz speed
   {
     Serial.println(F("MAX30105 was not found. Please check wiring/power."));
     while (1);
@@ -143,11 +149,24 @@ void setup() {
   int adcRange = 4096; //Options: 2048, 4096, 8192, 16384
 
   particleSensor.setup(ledBrightness, sampleAverage, ledMode, sampleRate, pulseWidth, adcRange); //Configure sensor with these settings
-
+  
   max30100First (); // Esta funcion realiza las primears 100 lecturas
+
+
+  Serial.println("Adafruit MLX90614 test");
+
+  if (!mlx.begin(0x5A, &Wire)) {
+    Serial.println("Error connecting to MLX sensor. Check wiring.");
+    while (1);
+  };
+
+  Serial.print("Emissivity = "); Serial.println(mlx.readEmissivity());
+  Serial.println("================================================");
+  
   
   timeLastMQTT = millis (); // Inicia el control de tiempo de envio mqtt
-  timeLastMax30100 = millis (); // Inicia el control de tiempo del sensor
+  timeLastMax30100 = millis (); // Inicia el control de tiempo del sensor MAX30100
+  timeLastMLX90614 = millis (); // Inicia el control de tiempo del sensor MLX90614
 
   
 }// fin del void setup ()
@@ -187,36 +206,48 @@ void loop() {
 
       //send samples and calculation result to terminal program through UART
 
-      Serial.print(F("HR="));
-      Serial.print(heartRate, DEC);
+      //Serial.print(F("HR="));
+      //Serial.print(heartRate, DEC);
 
-      Serial.print(F(", HRvalid="));
-      Serial.print(validHeartRate, DEC);
+      //Serial.print(F(", HRvalid="));
+      //Serial.print(validHeartRate, DEC);
 
-      Serial.print(F(", SPO2="));
-      Serial.print(spo2, DEC);
+      //Serial.print(F(", SPO2="));
+      //Serial.print(spo2, DEC);
 
-      Serial.print(F(", SPO2Valid="));
-      Serial.println(validSPO2, DEC);
+      //Serial.print(F(", SPO2Valid="));
+      //Serial.println(validSPO2, DEC);
     }
 
     //After gathering 25 new samples recalculate HR and SP02
-    maxim_heart_rate_and_oxygen_saturation(irBuffer, bufferLength, redBuffer, &spo2, &validSPO2, &heartRate, &validHeartRate);
+    maxim_heart_rate_and_oxygen_saturation(irBuffer, bufferLength, redBuffer, &spo2, &validSPO2, &heartRate, &validHeartRate);  
+  }// fin del if (timeNow - timeLastMax30100 > waitMax30100)
+
+
+  if (timeNow - timeLastMLX90614 > waitMLX90614) { // Manda un mensaje por MQTT cada cinco segundos
+    timeLastMLX90614 = timeNow; // Actualización de seguimiento de tiempo
     
-  }
+    tir = mlx.readAmbientTempC(); // Se envía la lectura del sensor de temperatura
+    
+    Serial.print("Ambient = "); Serial.print(mlx.readAmbientTempC());
+    tir = mlx.readObjectTempC();
+    Serial.print("*C\tObject = "); Serial.print(tir); Serial.println("*C");
+    
+  }// fin del if (timeNow - timeLastMLX90614 > waitMLX90614)
+
+
   
-  
-  if (timeNow - timeLastMQTT > wait) { // Manda un mensaje por MQTT cada cinco segundos
+  if (timeNow - timeLastMQTT > waitMQTT) { // Manda un mensaje por MQTT cada cinco segundos
     timeLastMQTT = timeNow; // Actualización de seguimiento de tiempo
 
     //Se construye el string correspondiente al JSON que contiene 3 variables
-    String json = "{\"hr\"=" + String (heartRate) + ",\"hrv\":" + String (validHeartRate) + ",\"spo2\":" + String (spo2) + ",\"spo2v\":"+ String (validSPO2) + "}";
+    String json = "{\"hr\":" + String (heartRate) + ",\"hrv\":" + String (validHeartRate) + ",\"spo2\":" + String (spo2) + ",\"spo2v\":"+ String (validSPO2) + ",\"tir\":" + String (tir) + "}";
     Serial.println(json); // Se imprime en monitor solo para poder visualizar que el string esta correctamente creado
     int str_len = json.length() + 1;//Se calcula la longitud del string
     char char_array[str_len];//Se crea un arreglo de caracteres de dicha longitud
     json.toCharArray(char_array, str_len);//Se convierte el string a char array    
     client.publish("codigoIoT/detectorSintomas/flow", char_array); // Esta es la función que envía los datos por MQTT, especifica el tema y el valor
-  }// fin del if (timeNow - timeLast > wait)
+  }// fin del if (timeNow - timeLastMQTT > waitMQTT)
 }// fin del void loop ()
 
 // Funciones de usuario
