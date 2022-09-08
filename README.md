@@ -57,8 +57,11 @@ Para observar el funcionamiento de este proyecto deberás realizar lo siguiente.
 3. Si cambio los te mas de publicación y lectura de mqtt en el archivo .ino tambien debe cambiar el tema en el nodo MQTT in.
 4. Visita el dashboard de NodeRed
 
-![]()
+#### MySQL
+1. Seguir las instrucciones del archivo instrucciones.md dentro de la carpeta MySQL
 
-[]
+![](https://github.com/EduCabreraMendoza/Detector-Sintomas-Covid/blob/main/dahsboard.PNG)
+
+
 
 Creado el 5-sep-2022 por [Eduardo Cabrera](https://github.com/EduCabreraMendoza)
