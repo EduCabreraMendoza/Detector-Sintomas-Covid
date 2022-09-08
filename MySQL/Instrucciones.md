@@ -20,6 +20,6 @@
 8. Puedes consultar el los datos dentro de la base de datos con el comando
     - `SELECT FROM * registro;`
 
-![](https://github.com/EduCabreraMendoza/Detector-Sintomas-Covid/blob/main/Base-De-Datos.PNG)
+![](https://github.com/EduCabreraMendoza/Detector-Sintomas-Covid/blob/main/Base-De-Datos.jpg)
 
 Para salir de los comandos de MySQL, usar el comando exit;
